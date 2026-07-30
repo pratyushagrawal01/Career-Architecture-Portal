@@ -1,4 +1,4 @@
-import { BriefcaseBusiness } from "lucide-react";
+import { BriefcaseBusiness, Download } from "lucide-react";
 
 export default function Sidebar() {
   return (
@@ -13,10 +13,22 @@ export default function Sidebar() {
       <nav className="flex-1 p-4">
 
         <button className="w-full text-left rounded-lg px-4 py-3 mb-2 bg-blue-700 font-semibold flex items-center gap-2">
-          Career Guidance
+          <BriefcaseBusiness size={18}/>
+          COO
         </button>
 
       </nav>
+
+      <div className="p-4 border-t border-blue-800">
+        <a
+          href="/templates/coo_org_chart_template.xlsx"
+          download
+          className="w-full text-left rounded-lg px-4 py-3 bg-blue-800/60 hover:bg-blue-800 font-medium flex items-center gap-2 text-sm transition-colors"
+        >
+          <Download size={16} />
+          Download Excel Template
+        </a>
+      </div>
     </aside>
   );
 }
