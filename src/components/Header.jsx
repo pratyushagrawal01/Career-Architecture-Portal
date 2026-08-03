@@ -8,7 +8,7 @@ export default function Header() {
       </div>
 
       <div className="text-sm text-slate-500">
-        Prototype
+        V1
       </div>
     </header>
   );
