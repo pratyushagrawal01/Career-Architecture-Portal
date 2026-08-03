@@ -14,7 +14,7 @@ export default function Sidebar() {
 
         <button className="w-full text-left rounded-lg px-4 py-3 mb-2 bg-blue-700 font-semibold flex items-center gap-2">
           <BriefcaseBusiness size={18}/>
-          COO
+          Architecture
         </button>
 
       </nav>
