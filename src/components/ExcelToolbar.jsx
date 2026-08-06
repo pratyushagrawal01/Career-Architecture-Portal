@@ -6,6 +6,7 @@ import {
   FileSpreadsheet,
   ChevronDown,
   ChevronUp,
+  Download,
 } from "lucide-react";
 import { readExcelFile } from "../utils/excelParser";
 
@@ -16,7 +17,7 @@ import { readExcelFile } from "../utils/excelParser";
 const supportsFileSystemAccess =
   typeof window !== "undefined" && "showOpenFilePicker" in window;
 
-export default function ExcelToolbar({ onDataLoaded }) {
+export default function ExcelToolbar({ onDataLoaded, onExport }) {
   const fileInputRef = useRef(null);
   const fileHandleRef = useRef(null);
 
@@ -122,6 +123,15 @@ export default function ExcelToolbar({ onDataLoaded }) {
         </div>
 
         <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+          <button
+            onClick={onExport}
+            title="Download the chart as it currently looks — including any edits made directly in the portal — as a new Excel file"
+            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 px-2 py-1.5 rounded-md hover:bg-slate-100"
+          >
+            <Download size={13} />
+            Export to Excel
+          </button>
+
           {fileName && (
             <button
               onClick={handlePick}

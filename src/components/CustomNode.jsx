@@ -24,6 +24,17 @@ function colourForLevel(level) {
 }
 
 export default function CustomNode({ data }) {
+  let border = "1px solid #dbe4f0";
+  let boxShadow = "0 2px 10px rgba(0,0,0,.08)";
+
+  if (data.highlighted) {
+    border = "1px solid #f59e0b";
+    boxShadow = "0 0 0 4px rgba(245,158,11,0.35), 0 2px 10px rgba(0,0,0,.08)";
+  } else if (data.chainHighlighted) {
+    border = "1px solid #2563eb";
+    boxShadow = "0 0 0 3px rgba(37,99,235,0.3), 0 2px 10px rgba(0,0,0,.08)";
+  }
+
   return (
     <>
       <Handle type="target" position={Position.Top} />
@@ -33,10 +44,13 @@ export default function CustomNode({ data }) {
           width: 240,
           borderRadius: 10,
           overflow: "hidden",
-          border: "1px solid #dbe4f0",
-          boxShadow: "0 2px 10px rgba(0,0,0,.08)",
+          border,
+          boxShadow,
           background: "white",
+          cursor: "pointer",
+          transition: "box-shadow 0.3s ease, border-color 0.3s ease",
         }}
+        title="Click to trace reporting line · Double-click to edit"
       >
         <div
           style={{
