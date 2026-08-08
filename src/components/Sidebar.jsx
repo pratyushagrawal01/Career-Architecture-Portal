@@ -18,17 +18,7 @@ export default function Sidebar() {
         </button>
 
       </nav>
-
-      <div className="p-4 border-t border-blue-800">
-        <a
-          href="/templates/Career Architecture Template.xlsx"
-          download
-          className="w-full text-left rounded-lg px-4 py-3 bg-blue-800/60 hover:bg-blue-800 font-medium flex items-center gap-2 text-sm transition-colors"
-        >
-          <Download size={16} />
-          Download Excel Template
-        </a>
-      </div> 
+       
     </aside>
   );
 }
