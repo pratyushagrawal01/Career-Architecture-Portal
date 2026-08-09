@@ -1,43 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { X, Trash2, UserPlus, AlertTriangle } from "lucide-react";
+import { X, Trash2, AlertTriangle } from "lucide-react";
 
-function childrenMapFromEdges(edges) {
-  const map = {};
-  edges.forEach((e) => {
-    map[e.source] = map[e.source] || [];
-    map[e.source].push(e.target);
-  });
-  return map;
-}
-
-// Walks down from id to find every descendant — used so the "Reports
-// to" dropdown can't offer choices that would create a cycle.
-function getDescendantIds(id, childrenMap) {
-  const result = new Set();
-  const stack = [...(childrenMap[id] || [])];
-  while (stack.length) {
-    const current = stack.pop();
-    if (result.has(current)) continue;
-    result.add(current);
-    stack.push(...(childrenMap[current] || []));
-  }
-  return result;
-}
-
-export default function EditNodeModal({
-  node,
-  currentParentId,
-  nodes,
-  edges,
-  onSave,
-  onDelete,
-  onAddChild,
-  onClose,
-}) {
+export default function EditNodeModal({ node, nodes, onSave, onDelete, onClose }) {
   const [label, setLabel] = useState("");
   const [level, setLevel] = useState("");
   const [experience, setExperience] = useState("");
-  const [parentId, setParentId] = useState("");
+  const [manuallyClosed, setManuallyClosed] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
@@ -45,22 +13,12 @@ export default function EditNodeModal({
     setLabel(node.data.label || "");
     setLevel(node.data.level || "");
     setExperience(node.data.experience || "");
-    setParentId(currentParentId ?? "");
+    setManuallyClosed(Boolean(node.data.manuallyClosed));
     setConfirmingDelete(false);
-  }, [node, currentParentId]);
+  }, [node]);
 
   // Only actually computed while the modal is mounted (i.e. open), so
   // this never runs during a background drag.
-  const parentOptions = useMemo(() => {
-    if (!node) return [];
-    const childrenMap = childrenMapFromEdges(edges);
-    const descendants = getDescendantIds(node.id, childrenMap);
-    return nodes
-      .filter((n) => n.id !== node.id && !descendants.has(n.id))
-      .map((n) => ({ id: n.id, label: n.data.label }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [node, nodes, edges]);
-
   const knownLevels = useMemo(() => {
     const set = new Set(nodes.map((n) => n.data.level).filter(Boolean));
     return Array.from(set).sort();
@@ -75,7 +33,7 @@ export default function EditNodeModal({
       label: label.trim(),
       level: level.trim() || "L1",
       experience: experience.trim(),
-      parentId: parentId || null,
+      manuallyClosed,
     });
   };
 
@@ -134,32 +92,32 @@ export default function EditNodeModal({
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Reports to</label>
-            <select
-              value={parentId ?? ""}
-              onChange={(e) => setParentId(e.target.value || null)}
-              className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-200"
-            >
-              <option value="">— Top of chart —</option>
-              {parentOptions.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+          <div className="pt-1">
+            <label className="flex items-start gap-2 text-sm text-slate-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={manuallyClosed}
+                onChange={(e) => setManuallyClosed(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                Mark this position as closed
+                <span className="block text-xs text-slate-400">
+                  Any position reporting only to this one — with no other open
+                  parent — will show as closed too.
+                </span>
+              </span>
+            </label>
+            {!manuallyClosed && node.data.closed && (
+              <p className="mt-2 text-xs text-amber-600 flex items-start gap-1.5">
+                <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+                Currently showing as closed because every position it reports
+                to is closed.
+              </p>
+            )}
           </div>
 
-          <div className="flex items-center justify-between pt-2">
-            <button
-              type="button"
-              onClick={() => onAddChild(node.id)}
-              className="flex items-center gap-1.5 text-sm text-blue-700 hover:text-blue-800 font-medium"
-            >
-              <UserPlus size={15} />
-              Add direct report
-            </button>
-
+          <div className="flex justify-end pt-2">
             <button
               type="submit"
               className="bg-blue-700 hover:bg-blue-800 text-white text-sm font-medium px-4 py-2 rounded-md"
@@ -183,8 +141,8 @@ export default function EditNodeModal({
               <div className="flex items-start gap-1.5 text-sm text-slate-600">
                 <AlertTriangle size={14} className="text-red-500 flex-shrink-0 mt-0.5" />
                 <span>
-                  Delete "{node.data.label}"? Their direct reports will move up to
-                  whoever they reported to.
+                  Delete "{node.data.label}"? Any connections to or from it will be
+                  removed too.
                 </span>
               </div>
               <div className="flex gap-2">

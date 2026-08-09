@@ -7,10 +7,10 @@ const colourMap = {
   L1: "#8CB9F5",
 };
 
-// Any level string HR types into the sheet that we don't already know
-// (a typo, or a genuinely new grade like "L2") still needs *some*
-// color rather than rendering blank — pick one deterministically so
-// the same level always gets the same color across refreshes.
+// Any level string that isn't one of the known ones (a typo, or a
+// genuinely new grade) still needs some color rather than rendering
+// blank — pick one deterministically so the same level always gets
+// the same color.
 const FALLBACK_PALETTE = ["#5B8DEF", "#7C5CBF", "#2F9E77", "#B45309", "#BE185D"];
 
 function colourForLevel(level) {
@@ -35,6 +35,12 @@ export default function CustomNode({ data }) {
     boxShadow = "0 0 0 3px rgba(37,99,235,0.3), 0 2px 10px rgba(0,0,0,.08)";
   }
 
+  // `closed` is the *effective* state — computed from this node's own
+  // manual toggle plus its parents: a node only shows as closed once
+  // every one of its parents (if any) is also effectively closed, so a
+  // child with one open and one closed parent still reads as open.
+  const isClosed = Boolean(data.closed);
+
   return (
     <>
       <Handle type="target" position={Position.Top} />
@@ -48,66 +54,90 @@ export default function CustomNode({ data }) {
           boxShadow,
           background: "white",
           cursor: "pointer",
-          transition: "box-shadow 0.3s ease, border-color 0.3s ease",
+          opacity: isClosed ? 0.55 : 1,
+          transition: "box-shadow 0.3s ease, border-color 0.3s ease, opacity 0.2s ease",
         }}
-        title="Click to trace reporting line · Double-click to edit"
+        title="Click to trace reporting line · Double-click to edit · Drag from the bottom dot to connect · Use the arrow to collapse/expand"
       >
         <div
           style={{
-            background: colourForLevel(data.level),
+            background: isClosed ? "#94a3b8" : colourForLevel(data.level),
             color: "white",
-            padding: "10px 14px",
             fontWeight: 600,
-            fontSize: 15,
+            fontSize: 13,
+            padding: "10px 12px",
             display: "flex",
+            alignItems: "center",
             justifyContent: "space-between",
-            alignItems: "flex-start",
             gap: 8,
           }}
         >
-          <span style={{ minWidth: 0 }}>{data.label}</span>
+          <span
+            style={{
+              textDecoration: isClosed ? "line-through" : "none",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              minWidth: 0,
+            }}
+          >
+            {data.label}
+          </span>
 
-          {data.hasChildren && (
-            <button
-              className="nodrag nopan"
-              style={{
-                background: "transparent",
-                border: "none",
-                color: "white",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                padding: 0,
-                flexShrink: 0,
-                marginTop: 2,
-              }}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+            {isClosed && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: 0.3,
+                  background: "rgba(255,255,255,0.25)",
+                  borderRadius: 4,
+                  padding: "1px 6px",
+                }}
+              >
+                CLOSED
+              </span>
+            )}
 
-                data.onToggle?.(data.id);
-              }}
-            >
-              {data.expanded ? (
-                <ChevronDown size={18} />
-              ) : (
-                <ChevronRight size={18} />
-              )}
-            </button>
-          )}
+            {data.hasChildren && (
+              <button
+                className="nodrag nopan"
+                title={data.expanded ? "Collapse this branch" : "Expand this branch"}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "white",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  padding: 0,
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  data.onToggle?.(data.id);
+                }}
+              >
+                {data.expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </button>
+            )}
+          </div>
         </div>
 
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
-            padding: "10px 14px",
-            fontSize: 13,
-            color: "#555",
+            alignItems: "center",
+            fontSize: 12,
+            color: "#334155",
+            padding: "8px 12px",
+            background: "white",
           }}
         >
           <span>{data.level}</span>
-          <span>{data.experience}</span>
+          {data.experience && <span>{data.experience}</span>}
         </div>
       </div>
 

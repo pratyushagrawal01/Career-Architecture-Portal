@@ -1,6 +1,6 @@
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
-import COO from "./pages/COO";
+import OrgChartPage from "./pages/OrgChartPage";
 
 export default function App() {
   return (
@@ -11,7 +11,7 @@ export default function App() {
         <Header />
 
         <main className="flex-1 overflow-hidden p-6">
-          <COO />
+          <OrgChartPage />
         </main>
       </div>
     </div>

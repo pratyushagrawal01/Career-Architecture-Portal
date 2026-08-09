@@ -1,6 +1,6 @@
 import CareerTree from "../components/CareerTree";
 
-export default function COO() {
+export default function OrgChartPage() {
   return (
     <div className="bg-white rounded-xl shadow h-full p-6 flex flex-col">
 
