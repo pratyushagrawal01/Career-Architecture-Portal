@@ -1,4 +1,5 @@
 import { Handle, Position, NodeResizer } from "reactflow";
+import { ChevronRight, ChevronDown } from "lucide-react";
 
 const colourMap = {
   N1: "#0F2B5B",
@@ -40,6 +41,12 @@ export default function CustomNode({ data, selected }) {
     boxShadow = "0 0 0 3px rgba(37,99,235,0.3), 0 2px 10px rgba(0,0,0,.08)";
   }
 
+  // `closed` is the *effective* state — computed from this node's own
+  // manual toggle plus its parents: a node only shows as closed once
+  // every one of its parents (if any) is also effectively closed, so a
+  // child with one open and one closed parent still reads as open.
+  const isClosed = Boolean(data.closed);
+
   return (
     <>
       <NodeResizer
@@ -70,21 +77,76 @@ export default function CustomNode({ data, selected }) {
           containerType: "size",
           display: "flex",
           flexDirection: "column",
-          transition: "box-shadow 0.3s ease, border-color 0.3s ease",
+          opacity: isClosed ? 0.55 : 1,
+          transition: "box-shadow 0.3s ease, border-color 0.3s ease, opacity 0.2s ease",
         }}
-        title="Click to trace reporting line · Double-click to edit · Drag from the bottom dot to connect · Select to resize"
+        title="Click to trace reporting line · Double-click to edit · Drag from the bottom dot to connect · Select to resize · Use the arrow to collapse/expand"
       >
         <div
           style={{
-            background: colourForLevel(data.level),
+            background: isClosed ? "#94a3b8" : colourForLevel(data.level),
             color: "white",
             fontWeight: 600,
             fontSize: "clamp(11px, 12cqh, 22px)",
             padding: "clamp(6px, 8cqh, 16px) clamp(8px, 6cqw, 18px)",
             flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
           }}
         >
-          {data.label}
+          <span
+            style={{
+              textDecoration: isClosed ? "line-through" : "none",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              minWidth: 0,
+            }}
+          >
+            {data.label}
+          </span>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+            {isClosed && (
+              <span
+                style={{
+                  fontSize: "clamp(8px, 8cqh, 12px)",
+                  fontWeight: 700,
+                  letterSpacing: 0.3,
+                  background: "rgba(255,255,255,0.25)",
+                  borderRadius: 4,
+                  padding: "1px 6px",
+                }}
+              >
+                CLOSED
+              </span>
+            )}
+
+            {data.hasChildren && (
+              <button
+                className="nodrag nopan"
+                title={data.expanded ? "Collapse this branch" : "Expand this branch"}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "white",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  padding: 0,
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  data.onToggle?.(data.id);
+                }}
+              >
+                {data.expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </button>
+            )}
+          </div>
         </div>
 
         <div

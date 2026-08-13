@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -12,11 +12,13 @@ import { Maximize2, Minimize2, ImageDown } from "lucide-react";
 import { toPng } from "html-to-image";
 
 import CustomNode from "./CustomNode";
+import DeletableEdge from "./DeletableEdge";
 import NodeSearch from "./NodeSearch";
 import EditNodeModal from "./EditNodeModal";
 import { loadChart, saveChart } from "../utils/storage";
 
 const nodeTypes = { custom: CustomNode };
+const edgeTypes = { deletable: DeletableEdge };
 
 // BFS up through every incoming connection — since a node can now have
 // more than one parent, "the path to the top" is the union of every
@@ -36,6 +38,83 @@ function computeAncestorIds(id, edgesList) {
     });
   }
   return ids;
+}
+
+// A node's "closed" state cascades up from its parents rather than
+// being set directly (except via the manual toggle in the edit
+// modal). A node with no parents is only closed if it was manually
+// closed. A node WITH parents is closed only once every single one of
+// its parents is (effectively) closed — so a child with two parents,
+// only one of which is closed, still shows as open. Manually marking
+// a node closed always wins for that node itself, regardless of its
+// parents.
+function computeEffectiveClosed(nodesList, edgesList) {
+  const parentsOf = new Map(nodesList.map((n) => [n.id, []]));
+  edgesList.forEach((e) => {
+    if (parentsOf.has(e.target)) parentsOf.get(e.target).push(e.source);
+  });
+  const manualClosed = new Map(nodesList.map((n) => [n.id, Boolean(n.data.manuallyClosed)]));
+
+  const resolved = new Map();
+  function resolve(id, visiting) {
+    if (resolved.has(id)) return resolved.get(id);
+    if (visiting.has(id)) return false; // cycle guard — never seen in practice
+    visiting.add(id);
+
+    const parents = parentsOf.get(id) || [];
+    let closed;
+    if (manualClosed.get(id)) {
+      closed = true;
+    } else if (parents.length === 0) {
+      closed = false;
+    } else {
+      closed = parents.every((p) => resolve(p, visiting));
+    }
+
+    visiting.delete(id);
+    resolved.set(id, closed);
+    return closed;
+  }
+
+  nodesList.forEach((n) => resolve(n.id, new Set()));
+  return resolved;
+}
+
+// A node's *visibility* cascades from its parents' expand state, using
+// the same all-parents-must-agree logic as the closed cascade above,
+// just inverted: a node is hidden only once every single parent path
+// into it is blocked (that parent is itself hidden, or collapsed).
+// So collapsing one of two parents still leaves the child visible
+// through the other — only collapsing (or hiding) every parent folds
+// it away. Root nodes (no parents) are never hidden by this.
+function computeHiddenIds(nodesList, edgesList) {
+  const parentsOf = new Map(nodesList.map((n) => [n.id, []]));
+  edgesList.forEach((e) => {
+    if (parentsOf.has(e.target)) parentsOf.get(e.target).push(e.source);
+  });
+  const expandedOf = new Map(nodesList.map((n) => [n.id, n.data.expanded !== false]));
+
+  const resolved = new Map();
+  function resolve(id, visiting) {
+    if (resolved.has(id)) return resolved.get(id);
+    if (visiting.has(id)) return false; // cycle guard
+    visiting.add(id);
+
+    const parents = parentsOf.get(id) || [];
+    let hidden;
+    if (parents.length === 0) {
+      hidden = false;
+    } else {
+      hidden = parents.every((p) => resolve(p, visiting) || !expandedOf.get(p));
+    }
+
+    visiting.delete(id);
+    resolved.set(id, hidden);
+    return hidden;
+  }
+
+  nodesList.forEach((n) => resolve(n.id, new Set()));
+  return resolved;
 }
 
 // Picks a fresh id for a newly-placed node: one past the highest
@@ -60,6 +139,8 @@ function buildInitialChart() {
           label: n.data.label,
           level: n.data.level,
           experience: n.data.experience,
+          manuallyClosed: Boolean(n.data.manuallyClosed),
+          expanded: n.data.expanded !== false,
         },
       })),
       edges: saved.edges.map((e) => ({ id: e.id, source: e.source, target: e.target })),
@@ -154,6 +235,80 @@ export default function CareerTree() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedChainId, setNodes, setEdges]);
 
+  // --- Open/closed cascade -------------------------------------------------
+  // Recomputed whenever the *structure* that actually affects it
+  // changes (edges, or a manual closed toggle) — not on every drag, so
+  // this stays a plain string dependency rather than the raw nodes
+  // array, which would otherwise re-run on every pixel of movement.
+  const closedComputationKey = useMemo(() => {
+    const manualPart = nodes.map((n) => `${n.id}:${n.data.manuallyClosed ? 1 : 0}`).join(",");
+    const edgePart = edges.map((e) => `${e.source}>${e.target}`).join(",");
+    return `${manualPart}|${edgePart}`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes, edges]);
+
+  useEffect(() => {
+    const effectiveClosed = computeEffectiveClosed(nodes, edges);
+    setNodes((prev) => {
+      let changed = false;
+      const next = prev.map((n) => {
+        const closed = effectiveClosed.get(n.id) || false;
+        if (Boolean(n.data.closed) === closed) return n;
+        changed = true;
+        return { ...n, data: { ...n.data, closed } };
+      });
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closedComputationKey, setNodes]);
+
+  // --- Expand/collapse ------------------------------------------------------
+  const handleToggleExpand = useCallback(
+    (id) => {
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === id
+            ? { ...n, data: { ...n.data, expanded: n.data.expanded === false } }
+            : n
+        )
+      );
+    },
+    [setNodes]
+  );
+
+  const hasChildrenIds = useMemo(() => new Set(edges.map((e) => e.source)), [edges]);
+
+  // Same drag-safe trick as the closed cascade: only recompute
+  // visibility when the actual graph shape or an expand toggle
+  // changes, not on every pixel of a drag.
+  const visibilityKey = useMemo(() => {
+    const expandedPart = nodes.map((n) => `${n.id}:${n.data.expanded === false ? 0 : 1}`).join(",");
+    const edgePart = edges.map((e) => `${e.source}>${e.target}`).join(",");
+    return `${expandedPart}|${edgePart}`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes, edges]);
+
+  const hiddenMap = useMemo(
+    () => computeHiddenIds(nodes, edges),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visibilityKey]
+  );
+
+  const nodesForFlow = useMemo(
+    () =>
+      nodes.map((n) => ({
+        ...n,
+        hidden: hiddenMap.get(n.id) || false,
+        data: {
+          ...n.data,
+          hasChildren: hasChildrenIds.has(n.id),
+          expanded: n.data.expanded !== false,
+          onToggle: handleToggleExpand,
+        },
+      })),
+    [nodes, hiddenMap, hasChildrenIds, handleToggleExpand]
+  );
+
   // --- Manual connections -------------------------------------------------
   const onEdgesChange = useCallback(
     (changes) => {
@@ -219,6 +374,7 @@ export default function CareerTree() {
             label: role.label,
             level: role.level,
             experience: role.experience || "",
+            expanded: true,
           },
         },
       ]);
@@ -231,6 +387,19 @@ export default function CareerTree() {
 
   const focusOnNode = useCallback(
     (id) => {
+      // Make sure the node is actually on screen before trying to focus
+      // it — expand every ancestor above it that's currently collapsed.
+      setNodes((prev) => {
+        const ancestorIds = computeAncestorIds(id, edges);
+        let changed = false;
+        const next = prev.map((n) => {
+          if (n.id === id || !ancestorIds.has(n.id) || n.data.expanded !== false) return n;
+          changed = true;
+          return { ...n, data: { ...n.data, expanded: true } };
+        });
+        return changed ? next : prev;
+      });
+
       setNodes((prev) =>
         prev.map((n) => ({ ...n, data: { ...n.data, highlighted: n.id === id } }))
       );
@@ -244,14 +413,18 @@ export default function CareerTree() {
         );
       }, 2500);
 
-      instanceRef.current?.fitView({
-        nodes: [{ id }],
-        duration: 600,
-        padding: 2,
-        maxZoom: 1,
-      });
+      // A short delay lets any branch we just expanded actually render
+      // before we ask React Flow to frame it.
+      setTimeout(() => {
+        instanceRef.current?.fitView({
+          nodes: [{ id }],
+          duration: 600,
+          padding: 2,
+          maxZoom: 1,
+        });
+      }, 60);
     },
-    [setNodes]
+    [edges, setNodes]
   );
 
   // --- Two-way editing -------------------------------------------------------
@@ -272,6 +445,7 @@ export default function CareerTree() {
                   label: fields.label,
                   level: fields.level,
                   experience: fields.experience,
+                  manuallyClosed: Boolean(fields.manuallyClosed),
                 },
               }
             : n
@@ -291,6 +465,33 @@ export default function CareerTree() {
     },
     [setNodes, setEdges]
   );
+
+  // --- Deleting a single connection ----------------------------------------
+  // Triggered from the "x" button that appears on an edge once its line
+  // has been clicked (see DeletableEdge). Removes just that connection —
+  // the two roles it linked are untouched, though the open/closed
+  // cascade above will recompute since the graph shape changed.
+  const handleDeleteEdge = useCallback(
+    (edgeId) => {
+      setEdges((prev) => prev.filter((e) => e.id !== edgeId));
+      setSelectedChainId(null);
+    },
+    [setEdges]
+  );
+
+  const edgesForFlow = useMemo(() => {
+    const expandedOf = new Map(nodes.map((n) => [n.id, n.data.expanded !== false]));
+    return edges.map((e) => {
+      const sourceExpanded = expandedOf.get(e.source) !== false;
+      const targetHidden = hiddenMap.get(e.target) || false;
+      return {
+        ...e,
+        type: "deletable",
+        hidden: targetHidden || !sourceExpanded,
+        data: { onDelete: handleDeleteEdge },
+      };
+    });
+  }, [edges, nodes, hiddenMap, handleDeleteEdge]);
 
   const clickTimerRef = useRef(null);
 
@@ -315,10 +516,18 @@ export default function CareerTree() {
   }, []);
 
   // --- Download chart as PNG ------------------------------------------------
+  // Temporarily expands every collapsed branch so the exported image
+  // shows the whole org, not just whatever happens to be open on
+  // screen, then restores the prior expand/collapse state afterward.
   const handleDownloadImage = useCallback(() => {
     const instance = instanceRef.current;
     const viewportEl = wrapperRef.current?.querySelector(".react-flow__viewport");
     if (!instance || !viewportEl) return;
+
+    const previousExpandedById = Object.fromEntries(
+      nodesRef.current.map((n) => [n.id, n.data.expanded !== false])
+    );
+    setNodes((prev) => prev.map((n) => ({ ...n, data: { ...n.data, expanded: true } })));
 
     // Default edges color themselves via a CSS variable, which
     // html-to-image frequently fails to resolve — force an explicit
@@ -334,16 +543,24 @@ export default function CareerTree() {
       }));
     });
 
-    const restoreStyles = () => {
+    const restore = () => {
+      setNodes((prev) =>
+        prev.map((n) => ({
+          ...n,
+          data: { ...n.data, expanded: previousExpandedById[n.id] ?? n.data.expanded },
+        }))
+      );
       setEdges((prevEdges) =>
         prevEdges.map((e) => ({ ...e, style: edgeStyleBackupRef.current[e.id] }))
       );
     };
 
+    // Give the DOM a moment to actually render the newly-expanded
+    // branches (and measure their real dimensions) before capturing.
     setTimeout(() => {
-      const visibleNodes = instance.getNodes();
+      const visibleNodes = instance.getNodes().filter((n) => !n.hidden);
       if (visibleNodes.length === 0) {
-        restoreStyles();
+        restore();
         return;
       }
       const bounds = getNodesBounds(visibleNodes);
@@ -370,9 +587,9 @@ export default function CareerTree() {
           a.setAttribute("href", dataUrl);
           a.click();
         })
-        .finally(restoreStyles);
-    }, 100);
-  }, [setEdges]);
+        .finally(restore);
+    }, 200);
+  }, [setNodes, setEdges]);
 
   return (
     <div
@@ -385,8 +602,9 @@ export default function CareerTree() {
     >
       <div className="flex-shrink-0 border-b bg-slate-50 px-4 py-2 text-xs text-slate-500 flex items-center justify-between">
         <span>
-          Drag roles from the sidebar onto the chart, then drag between the dots to
-          connect them.
+          Drag roles from the sidebar onto the chart, drag between the dots to connect
+          them, click a connecting line to delete it, and use the arrow on a role to
+          collapse or expand its branch.
         </span>
         <span className="flex-shrink-0 ml-3">
           {nodes.length} position{nodes.length === 1 ? "" : "s"} · {edges.length} connection
@@ -403,9 +621,10 @@ export default function CareerTree() {
         onDrop={handleDrop}
       >
         <ReactFlow
-          nodes={nodes}
-          edges={edges}
+          nodes={nodesForFlow}
+          edges={edgesForFlow}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
