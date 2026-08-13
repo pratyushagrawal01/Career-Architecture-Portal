@@ -51,7 +51,7 @@ export default function Sidebar() {
       <nav className="p-4 flex-shrink-0">
         <button className="w-full text-left rounded-lg px-4 py-3 bg-blue-700 font-semibold flex items-center gap-2">
           <Network size={18} />
-          Org Chart
+          Career Chart
         </button>
       </nav>
 

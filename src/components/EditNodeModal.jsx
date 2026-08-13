@@ -5,7 +5,6 @@ export default function EditNodeModal({ node, nodes, onSave, onDelete, onClose }
   const [label, setLabel] = useState("");
   const [level, setLevel] = useState("");
   const [experience, setExperience] = useState("");
-  const [manuallyClosed, setManuallyClosed] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
@@ -13,7 +12,6 @@ export default function EditNodeModal({ node, nodes, onSave, onDelete, onClose }
     setLabel(node.data.label || "");
     setLevel(node.data.level || "");
     setExperience(node.data.experience || "");
-    setManuallyClosed(Boolean(node.data.manuallyClosed));
     setConfirmingDelete(false);
   }, [node]);
 
@@ -33,7 +31,6 @@ export default function EditNodeModal({ node, nodes, onSave, onDelete, onClose }
       label: label.trim(),
       level: level.trim() || "L1",
       experience: experience.trim(),
-      manuallyClosed,
     });
   };
 
@@ -90,31 +87,6 @@ export default function EditNodeModal({ node, nodes, onSave, onDelete, onClose }
                 className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
               />
             </div>
-          </div>
-
-          <div className="pt-1">
-            <label className="flex items-start gap-2 text-sm text-slate-600 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={manuallyClosed}
-                onChange={(e) => setManuallyClosed(e.target.checked)}
-                className="mt-0.5"
-              />
-              <span>
-                Mark this position as closed
-                <span className="block text-xs text-slate-400">
-                  Any position reporting only to this one — with no other open
-                  parent — will show as closed too.
-                </span>
-              </span>
-            </label>
-            {!manuallyClosed && node.data.closed && (
-              <p className="mt-2 text-xs text-amber-600 flex items-start gap-1.5">
-                <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
-                Currently showing as closed because every position it reports
-                to is closed.
-              </p>
-            )}
           </div>
 
           <div className="flex justify-end pt-2">

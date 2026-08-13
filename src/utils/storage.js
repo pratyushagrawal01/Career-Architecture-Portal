@@ -43,12 +43,11 @@ export function saveChart(nodesList, edgesList) {
     const slimNodes = nodesList.map((n) => ({
       id: n.id,
       position: n.position,
+      style: { width: n.style?.width ?? n.width, height: n.style?.height ?? n.height },
       data: {
         label: n.data.label,
         level: n.data.level,
         experience: n.data.experience,
-        manuallyClosed: !!n.data.manuallyClosed,
-        expanded: n.data.expanded === false ? false : true,
       },
     }));
     const slimEdges = edgesList.map((e) => ({ id: e.id, source: e.source, target: e.target }));
