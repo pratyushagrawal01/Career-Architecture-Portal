@@ -52,7 +52,13 @@ export function saveChart(nodesList, edgesList) {
         expanded: n.data.expanded === false ? false : true,
       },
     }));
-    const slimEdges = edgesList.map((e) => ({ id: e.id, source: e.source, target: e.target }));
+    const slimEdges = edgesList.map((e) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      sourceHandle: e.sourceHandle,
+      targetHandle: e.targetHandle,
+    }));
     localStorage.setItem(CHART_KEY, JSON.stringify({ nodes: slimNodes, edges: slimEdges }));
   } catch {
     // best-effort

@@ -143,7 +143,13 @@ function buildInitialChart() {
           expanded: n.data.expanded !== false,
         },
       })),
-      edges: saved.edges.map((e) => ({ id: e.id, source: e.source, target: e.target })),
+      edges: saved.edges.map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle,
+        targetHandle: e.targetHandle,
+      })),
     };
   }
   // Nothing saved yet — start with an empty canvas. The Role Library
@@ -326,7 +332,11 @@ export default function CareerTree() {
       setSelectedChainId(null);
       setEdges((prev) => {
         const exists = prev.some(
-          (e) => e.source === connection.source && e.target === connection.target
+          (e) =>
+            e.source === connection.source &&
+            e.target === connection.target &&
+            e.sourceHandle === connection.sourceHandle &&
+            e.targetHandle === connection.targetHandle
         );
         if (exists) return prev;
         return [
@@ -335,6 +345,8 @@ export default function CareerTree() {
             id: `e-${connection.source}-${connection.target}-${Date.now()}`,
             source: connection.source,
             target: connection.target,
+            sourceHandle: connection.sourceHandle,
+            targetHandle: connection.targetHandle,
           },
         ];
       });
@@ -602,9 +614,9 @@ export default function CareerTree() {
     >
       <div className="flex-shrink-0 border-b bg-slate-50 px-4 py-2 text-xs text-slate-500 flex items-center justify-between">
         <span>
-          Drag roles from the sidebar onto the chart, drag between the dots to connect
-          them, click a connecting line to delete it, and use the arrow on a role to
-          collapse or expand its branch.
+          Drag roles from the sidebar onto the chart, drag between any of the four dots
+          (top, bottom, left, right) to connect them, click a connecting line to delete
+          it, and use the arrow on a role to collapse or expand its branch.
         </span>
         <span className="flex-shrink-0 ml-3">
           {nodes.length} position{nodes.length === 1 ? "" : "s"} · {edges.length} connection
@@ -634,6 +646,7 @@ export default function CareerTree() {
           onNodeClick={handleNodeClick}
           onNodeDoubleClick={handleNodeDoubleClick}
           onPaneClick={handlePaneClick}
+          connectionMode="loose"
           nodesDraggable
           fitView
           fitViewOptions={{ padding: 0.2 }}

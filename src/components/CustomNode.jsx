@@ -57,7 +57,11 @@ export default function CustomNode({ data, selected }) {
         handleStyle={{ width: 8, height: 8, borderRadius: 2 }}
       />
 
-      <Handle type="target" position={Position.Top} />
+      {/* Four connection points — top, bottom, left, right. Each one can
+          both start and end a connection (the canvas is set to
+          "loose" connection mode in CareerTree), so any dot can link
+          to any other dot on any other box. */}
+      <Handle type="target" position={Position.Top} id="top" isConnectableStart isConnectableEnd />
 
       <div
         style={{
@@ -80,16 +84,22 @@ export default function CustomNode({ data, selected }) {
           opacity: isClosed ? 0.55 : 1,
           transition: "box-shadow 0.3s ease, border-color 0.3s ease, opacity 0.2s ease",
         }}
-        title="Click to trace reporting line · Double-click to edit · Drag from the bottom dot to connect · Select to resize · Use the arrow to collapse/expand"
+        title="Click to trace reporting line · Double-click to edit · Drag from any of the 4 dots to connect · Select to resize · Use the arrow to collapse/expand"
       >
         <div
           style={{
             background: isClosed ? "#94a3b8" : colourForLevel(data.level),
             color: "white",
             fontWeight: 600,
-            fontSize: "clamp(11px, 12cqh, 22px)",
-            padding: "clamp(6px, 8cqh, 16px) clamp(8px, 6cqw, 18px)",
-            flexShrink: 0,
+            // Scales 1:1 with the box — grow the node 10% and this
+            // grows exactly 10%, since it's a pure fraction of the
+            // container's height with no fixed part.
+            fontSize: "clamp(13px, 18cqh, 28px)",
+            padding: "clamp(10px, 10cqh, 22px) clamp(10px, 6cqw, 20px)",
+            // This row now owns the extra space instead of the
+            // level/experience row below it.
+            flex: 1,
+            minHeight: 0,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
@@ -154,12 +164,16 @@ export default function CustomNode({ data, selected }) {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            fontSize: "clamp(10px, 10cqh, 18px)",
+            // Mostly a fixed size (the "6px" part) with only a small
+            // sliver of container-relative growth (the "5cqh" part).
+            // Because most of this value doesn't scale at all, a 10%
+            // increase in box height only moves this ~4-5%, so it
+            // grows noticeably slower than the role-name font above.
+            fontSize: "clamp(9px, calc(6px + 5cqh), 14px)",
             color: "#334155",
-            padding: "clamp(4px, 7cqh, 14px) clamp(8px, 6cqw, 18px)",
+            padding: "clamp(4px, 4cqh, 10px) clamp(8px, 6cqw, 16px)",
             background: "white",
-            flex: 1,
-            minHeight: 0,
+            flexShrink: 0,
           }}
         >
           <span>{data.level}</span>
@@ -167,7 +181,9 @@ export default function CustomNode({ data, selected }) {
         </div>
       </div>
 
-      <Handle type="source" position={Position.Bottom} />
+      <Handle type="source" position={Position.Bottom} id="bottom" isConnectableStart isConnectableEnd />
+      <Handle type="target" position={Position.Left} id="left" isConnectableStart isConnectableEnd />
+      <Handle type="source" position={Position.Right} id="right" isConnectableStart isConnectableEnd />
     </>
   );
 }
