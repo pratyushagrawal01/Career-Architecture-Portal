@@ -8,7 +8,7 @@ import ReactFlow, {
   useEdgesState,
   getNodesBounds,
 } from "reactflow";
-import { Maximize2, Minimize2, ImageDown } from "lucide-react";
+import { Maximize2, Minimize2, ImageDown, Camera } from "lucide-react";
 import { toPng } from "html-to-image";
 
 import CustomNode from "./CustomNode";
@@ -125,8 +125,8 @@ function nextId(existingIds) {
   return String(max + 1);
 }
 
-function buildInitialChart() {
-  const saved = loadChart();
+function buildInitialChart(chartId) {
+  const saved = loadChart(chartId);
   if (saved && saved.nodes.length) {
     return {
       nodes: saved.nodes.map((n) => ({
@@ -158,9 +158,11 @@ function buildInitialChart() {
   return { nodes: [], edges: [] };
 }
 
-const initialChart = buildInitialChart();
-
-export default function CareerTree() {
+export default function CareerTree({ chartId }) {
+  // CareerTree is remounted (via a `key`) whenever the active chart
+  // changes, so this only needs to run once per chart — no need to
+  // re-derive it on every render.
+  const [initialChart] = useState(() => buildInitialChart(chartId));
   const [nodes, setNodes, onNodesChange] = useNodesState(initialChart.nodes);
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState(initialChart.edges);
 
@@ -204,9 +206,9 @@ export default function CareerTree() {
   // file backing it), so every change gets persisted, debounced so a
   // drag doesn't spam writes on every pixel of movement.
   useEffect(() => {
-    const t = setTimeout(() => saveChart(nodes, edges), 500);
+    const t = setTimeout(() => saveChart(chartId, nodes, edges), 500);
     return () => clearTimeout(t);
-  }, [nodes, edges]);
+  }, [chartId, nodes, edges]);
 
   // --- Reporting-chain highlight -----------------------------------------
   const [selectedChainId, setSelectedChainId] = useState(null);
@@ -528,80 +530,102 @@ export default function CareerTree() {
   }, []);
 
   // --- Download chart as PNG ------------------------------------------------
-  // Temporarily expands every collapsed branch so the exported image
-  // shows the whole org, not just whatever happens to be open on
-  // screen, then restores the prior expand/collapse state afterward.
-  const handleDownloadImage = useCallback(() => {
-    const instance = instanceRef.current;
-    const viewportEl = wrapperRef.current?.querySelector(".react-flow__viewport");
-    if (!instance || !viewportEl) return;
+  // Shared by both download buttons below. When `expandAll` is true,
+  // every collapsed branch is temporarily opened so the exported image
+  // shows the whole org rather than just whatever's open on screen
+  // (then restored afterward); when false, the chart is captured
+  // exactly as it currently looks, retracted nodes and all.
+  const captureChartImage = useCallback(
+    (expandAll) => {
+      const instance = instanceRef.current;
+      const viewportEl = wrapperRef.current?.querySelector(".react-flow__viewport");
+      if (!instance || !viewportEl) return;
 
-    const previousExpandedById = Object.fromEntries(
-      nodesRef.current.map((n) => [n.id, n.data.expanded !== false])
-    );
-    setNodes((prev) => prev.map((n) => ({ ...n, data: { ...n.data, expanded: true } })));
-
-    // Default edges color themselves via a CSS variable, which
-    // html-to-image frequently fails to resolve — force an explicit
-    // stroke for the capture, then restore whatever each edge had.
-    setEdges((prevEdges) => {
-      edgeStyleBackupRef.current = Object.fromEntries(prevEdges.map((e) => [e.id, e.style]));
-      return prevEdges.map((e) => ({
-        ...e,
-        style: {
-          stroke: e.style?.stroke || "#94a3b8",
-          strokeWidth: e.style?.strokeWidth || 1.5,
-        },
-      }));
-    });
-
-    const restore = () => {
-      setNodes((prev) =>
-        prev.map((n) => ({
-          ...n,
-          data: { ...n.data, expanded: previousExpandedById[n.id] ?? n.data.expanded },
-        }))
+      const previousExpandedById = Object.fromEntries(
+        nodesRef.current.map((n) => [n.id, n.data.expanded !== false])
       );
-      setEdges((prevEdges) =>
-        prevEdges.map((e) => ({ ...e, style: edgeStyleBackupRef.current[e.id] }))
-      );
-    };
-
-    // Give the DOM a moment to actually render the newly-expanded
-    // branches (and measure their real dimensions) before capturing.
-    setTimeout(() => {
-      const visibleNodes = instance.getNodes().filter((n) => !n.hidden);
-      if (visibleNodes.length === 0) {
-        restore();
-        return;
+      if (expandAll) {
+        setNodes((prev) => prev.map((n) => ({ ...n, data: { ...n.data, expanded: true } })));
       }
-      const bounds = getNodesBounds(visibleNodes);
-      const PADDING = 60;
-      const imageWidth = Math.round(bounds.width + PADDING * 2);
-      const imageHeight = Math.round(bounds.height + PADDING * 2);
 
-      toPng(viewportEl, {
-        backgroundColor: "#ffffff",
-        width: imageWidth,
-        height: imageHeight,
-        style: {
-          width: `${imageWidth}px`,
-          height: `${imageHeight}px`,
-          transform: `translate(${-bounds.x + PADDING}px, ${-bounds.y + PADDING}px) scale(1)`,
-        },
-      })
-        .then((dataUrl) => {
-          const a = document.createElement("a");
-          a.setAttribute(
-            "download",
-            `career-architecture-${new Date().toISOString().slice(0, 10)}.png`
+      // Default edges color themselves via a CSS variable, which
+      // html-to-image frequently fails to resolve — force an explicit
+      // stroke for the capture, then restore whatever each edge had.
+      setEdges((prevEdges) => {
+        edgeStyleBackupRef.current = Object.fromEntries(prevEdges.map((e) => [e.id, e.style]));
+        return prevEdges.map((e) => ({
+          ...e,
+          style: {
+            stroke: e.style?.stroke || "#94a3b8",
+            strokeWidth: e.style?.strokeWidth || 1.5,
+          },
+        }));
+      });
+
+      const restore = () => {
+        if (expandAll) {
+          setNodes((prev) =>
+            prev.map((n) => ({
+              ...n,
+              data: { ...n.data, expanded: previousExpandedById[n.id] ?? n.data.expanded },
+            }))
           );
-          a.setAttribute("href", dataUrl);
-          a.click();
-        })
-        .finally(restore);
-    }, 200);
-  }, [setNodes, setEdges]);
+        }
+        setEdges((prevEdges) =>
+          prevEdges.map((e) => ({ ...e, style: edgeStyleBackupRef.current[e.id] }))
+        );
+      };
+
+      // Give the DOM a moment to actually render any newly-expanded
+      // branches (and measure their real dimensions) before capturing.
+      // A shorter delay is enough when nothing needs to expand first.
+      setTimeout(
+        () => {
+          const visibleNodes = instance.getNodes().filter((n) => !n.hidden);
+          if (visibleNodes.length === 0) {
+            restore();
+            return;
+          }
+          const bounds = getNodesBounds(visibleNodes);
+          const PADDING = 60;
+          const imageWidth = Math.round(bounds.width + PADDING * 2);
+          const imageHeight = Math.round(bounds.height + PADDING * 2);
+
+          toPng(viewportEl, {
+            backgroundColor: "#ffffff",
+            width: imageWidth,
+            height: imageHeight,
+            style: {
+              width: `${imageWidth}px`,
+              height: `${imageHeight}px`,
+              transform: `translate(${-bounds.x + PADDING}px, ${-bounds.y + PADDING}px) scale(1)`,
+            },
+          })
+            .then((dataUrl) => {
+              const a = document.createElement("a");
+              a.setAttribute(
+                "download",
+                `career-architecture-${new Date().toISOString().slice(0, 10)}.png`
+              );
+              a.setAttribute("href", dataUrl);
+              a.click();
+            })
+            .finally(restore);
+        },
+        expandAll ? 200 : 50
+      );
+    },
+    [setNodes, setEdges]
+  );
+
+  const handleDownloadImageExpanded = useCallback(
+    () => captureChartImage(true),
+    [captureChartImage]
+  );
+  const handleDownloadImageAsIs = useCallback(
+    () => captureChartImage(false),
+    [captureChartImage]
+  );
 
   return (
     <div
@@ -656,7 +680,16 @@ export default function CareerTree() {
           <MiniMap />
           <NodeSearch nodes={nodes} onSelect={focusOnNode} />
           <Controls>
-            <ControlButton onClick={handleDownloadImage} title="Download chart as image">
+            <ControlButton
+              onClick={handleDownloadImageAsIs}
+              title="Download chart as image (as shown, retracted nodes stay closed)"
+            >
+              <Camera size={14} />
+            </ControlButton>
+            <ControlButton
+              onClick={handleDownloadImageExpanded}
+              title="Download chart as image (expand all nodes first)"
+            >
               <ImageDown size={14} />
             </ControlButton>
             <ControlButton

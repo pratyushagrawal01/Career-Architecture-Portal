@@ -1,11 +1,21 @@
 // Excel is gone in this version, so the browser's localStorage is now
-// the only place the role library and the chart actually live.
+// the only place the role library and the charts actually live.
 // exportBackup/importBackup exist as a manual safety net — without
 // them, clearing browser data would silently wipe everything with no
 // way to recover it.
 
 const ROLES_KEY = "career-architecture-roles-v1";
-const CHART_KEY = "career-architecture-chart-v1";
+const CHARTS_INDEX_KEY = "career-architecture-charts-v1";
+const CHART_DATA_PREFIX = "career-architecture-chart-data-v1-";
+const ACTIVE_CHART_KEY = "career-architecture-active-chart-v1";
+
+// Pre-multi-chart versions of the app kept a single chart under this
+// key. It's read once, during migration, then left alone.
+const LEGACY_CHART_KEY = "career-architecture-chart-v1";
+
+function generateChartId() {
+  return `chart-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
 
 export function loadRoles(fallback) {
   try {
@@ -26,9 +36,107 @@ export function saveRoles(roles) {
   }
 }
 
-export function loadChart() {
+// --- Charts index (the list shown in the sidebar) ---------------------
+
+function readChartsIndexRaw() {
   try {
-    const raw = localStorage.getItem(CHART_KEY);
+    const raw = localStorage.getItem(CHARTS_INDEX_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+// Returns the list of { id, name } charts, always at least one. The
+// very first time this runs (no index saved yet), it migrates
+// whatever was under the old single-chart key into chart #1 instead
+// of silently dropping it.
+export function loadChartsIndex() {
+  const existing = readChartsIndexRaw();
+  if (existing) return existing;
+
+  let legacyChart = null;
+  try {
+    const raw = localStorage.getItem(LEGACY_CHART_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.nodes) && Array.isArray(parsed.edges)) {
+        legacyChart = parsed;
+      }
+    }
+  } catch {
+    // ignore — fall through to a blank chart
+  }
+
+  const id = generateChartId();
+  const index = [{ id, name: "Career Chart" }];
+  try {
+    localStorage.setItem(CHARTS_INDEX_KEY, JSON.stringify(index));
+    localStorage.setItem(
+      CHART_DATA_PREFIX + id,
+      JSON.stringify(legacyChart || { nodes: [], edges: [] })
+    );
+    localStorage.setItem(ACTIVE_CHART_KEY, id);
+  } catch {
+    // best-effort
+  }
+  return index;
+}
+
+export function saveChartsIndex(index) {
+  try {
+    localStorage.setItem(CHARTS_INDEX_KEY, JSON.stringify(index));
+  } catch {
+    // best-effort
+  }
+}
+
+export function loadActiveChartId(index) {
+  try {
+    const raw = localStorage.getItem(ACTIVE_CHART_KEY);
+    if (raw && index.some((c) => c.id === raw)) return raw;
+  } catch {
+    // ignore
+  }
+  return index[0]?.id ?? null;
+}
+
+export function saveActiveChartId(id) {
+  try {
+    localStorage.setItem(ACTIVE_CHART_KEY, id);
+  } catch {
+    // best-effort
+  }
+}
+
+// Creates a new, blank chart and returns its { id, name } entry —
+// caller is responsible for adding it to the index it keeps in state.
+export function createChart(name) {
+  const id = generateChartId();
+  try {
+    localStorage.setItem(CHART_DATA_PREFIX + id, JSON.stringify({ nodes: [], edges: [] }));
+  } catch {
+    // best-effort
+  }
+  return { id, name };
+}
+
+export function deleteChartData(id) {
+  try {
+    localStorage.removeItem(CHART_DATA_PREFIX + id);
+  } catch {
+    // best-effort
+  }
+}
+
+// --- A single chart's nodes/edges --------------------------------------
+
+export function loadChart(id) {
+  if (!id) return null;
+  try {
+    const raw = localStorage.getItem(CHART_DATA_PREFIX + id);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) return null;
@@ -38,7 +146,8 @@ export function loadChart() {
   }
 }
 
-export function saveChart(nodesList, edgesList) {
+export function saveChart(id, nodesList, edgesList) {
+  if (!id) return;
   try {
     const slimNodes = nodesList.map((n) => ({
       id: n.id,
@@ -59,21 +168,29 @@ export function saveChart(nodesList, edgesList) {
       sourceHandle: e.sourceHandle,
       targetHandle: e.targetHandle,
     }));
-    localStorage.setItem(CHART_KEY, JSON.stringify({ nodes: slimNodes, edges: slimEdges }));
+    localStorage.setItem(
+      CHART_DATA_PREFIX + id,
+      JSON.stringify({ nodes: slimNodes, edges: slimEdges })
+    );
   } catch {
     // best-effort
   }
 }
 
+// --- Backup / restore (covers roles + every chart) ----------------------
+
 export function exportBackup() {
   const roles = loadRoles([]);
-  const chart = loadChart() || { nodes: [], edges: [] };
+  const index = loadChartsIndex();
+  const charts = index.map((c) => {
+    const data = loadChart(c.id) || { nodes: [], edges: [] };
+    return { id: c.id, name: c.name, nodes: data.nodes, edges: data.edges };
+  });
   const payload = {
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     roles,
-    nodes: chart.nodes,
-    edges: chart.edges,
+    charts,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -91,8 +208,32 @@ export async function importBackup(file) {
     throw new Error("Invalid backup file");
   }
   const roles = Array.isArray(parsed.roles) ? parsed.roles : [];
-  const nodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
-  const edges = Array.isArray(parsed.edges) ? parsed.edges : [];
   localStorage.setItem(ROLES_KEY, JSON.stringify(roles));
-  localStorage.setItem(CHART_KEY, JSON.stringify({ nodes, edges }));
+
+  if (Array.isArray(parsed.charts) && parsed.charts.length) {
+    // Current (multi-chart) backup format.
+    const index = parsed.charts.map((c) => ({
+      id: typeof c.id === "string" && c.id ? c.id : generateChartId(),
+      name: typeof c.name === "string" && c.name.trim() ? c.name.trim() : "Untitled Chart",
+    }));
+    parsed.charts.forEach((c, i) => {
+      localStorage.setItem(
+        CHART_DATA_PREFIX + index[i].id,
+        JSON.stringify({
+          nodes: Array.isArray(c.nodes) ? c.nodes : [],
+          edges: Array.isArray(c.edges) ? c.edges : [],
+        })
+      );
+    });
+    localStorage.setItem(CHARTS_INDEX_KEY, JSON.stringify(index));
+    localStorage.setItem(ACTIVE_CHART_KEY, index[0].id);
+  } else {
+    // Older, single-chart backup format.
+    const nodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
+    const edges = Array.isArray(parsed.edges) ? parsed.edges : [];
+    const id = generateChartId();
+    localStorage.setItem(CHARTS_INDEX_KEY, JSON.stringify([{ id, name: "Career Chart" }]));
+    localStorage.setItem(CHART_DATA_PREFIX + id, JSON.stringify({ nodes, edges }));
+    localStorage.setItem(ACTIVE_CHART_KEY, id);
+  }
 }
