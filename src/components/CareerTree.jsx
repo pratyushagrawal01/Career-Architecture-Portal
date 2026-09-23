@@ -15,7 +15,9 @@ import CustomNode from "./CustomNode";
 import DeletableEdge from "./DeletableEdge";
 import NodeSearch from "./NodeSearch";
 import EditNodeModal from "./EditNodeModal";
-import { loadChart, saveChart } from "../utils/storage";
+import FontControls from "./FontControls";
+import SelectionToolbar from "./SelectionToolbar";
+import { loadChart, saveChart, loadFontSettings, saveFontSettings } from "../utils/storage";
 
 const nodeTypes = { custom: CustomNode };
 const edgeTypes = { deletable: DeletableEdge };
@@ -443,6 +445,55 @@ export default function CareerTree({ chartId }) {
 
   // --- Two-way editing -------------------------------------------------------
   const [editingNodeId, setEditingNodeId] = useState(null);
+  // --- Chart-wide font settings --------------------------------------------
+  // One setting for the whole chart (not per-box) — applied via CSS
+  // variables on the wrapper element below, which every node inherits.
+  const [fontSettings, setFontSettings] = useState(() => loadFontSettings());
+
+  useEffect(() => {
+    saveFontSettings(fontSettings);
+  }, [fontSettings]);
+
+  const handleFontChange = useCallback((patch) => {
+    setFontSettings((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  // --- Multi-select and group actions ---------------------------------------
+  // Dragging on empty canvas draws a selection box (see selectionOnDrag
+  // on <ReactFlow> below); shift/ctrl-click adds one role at a time.
+  // Moving any selected role drags the whole group — that's built into
+  // React Flow once multiple nodes are marked selected, no extra code
+  // needed here.
+  const [selectedNodeIds, setSelectedNodeIds] = useState([]);
+
+  const handleSelectionChange = useCallback(({ nodes: selectedNodes }) => {
+    setSelectedNodeIds(selectedNodes.map((n) => n.id));
+  }, []);
+
+  const handleBulkSetClosed = useCallback(
+    (manuallyClosed) => {
+      setNodes((prev) =>
+        prev.map((n) =>
+          selectedNodeIds.includes(n.id) ? { ...n, data: { ...n.data, manuallyClosed } } : n
+        )
+      );
+    },
+    [setNodes, selectedNodeIds]
+  );
+
+  const handleBulkDelete = useCallback(() => {
+    const idSet = new Set(selectedNodeIds);
+    setNodes((prev) => prev.filter((n) => !idSet.has(n.id)));
+    setEdges((prev) => prev.filter((e) => !idSet.has(e.source) && !idSet.has(e.target)));
+    setSelectedChainId((prev) => (idSet.has(prev) ? null : prev));
+    setSelectedNodeIds([]);
+  }, [setNodes, setEdges, selectedNodeIds]);
+
+  const handleClearSelection = useCallback(() => {
+    setNodes((prev) => prev.map((n) => (n.selected ? { ...n, selected: false } : n)));
+    setSelectedNodeIds([]);
+  }, [setNodes]);
+
   const editingNode = nodes.find((n) => n.id === editingNodeId) || null;
 
   const closeEditModal = useCallback(() => setEditingNodeId(null), []);
@@ -635,16 +686,29 @@ export default function CareerTree({ chartId }) {
           ? "h-full w-full bg-white flex flex-col"
           : "h-full w-full rounded-xl overflow-hidden border bg-white flex flex-col"
       }
+      style={{
+        "--chart-font-family": fontSettings.fontFamily,
+        "--chart-font-scale": fontSettings.fontScale,
+      }}
     >
       <div className="flex-shrink-0 border-b bg-slate-50 px-4 py-2 text-xs text-slate-500 flex items-center justify-between">
         <span>
           Drag roles from the sidebar onto the chart, drag between any of the four dots
           (top, bottom, left, right) to connect them, click a connecting line to delete
-          it, and use the arrow on a role to collapse or expand its branch.
+          it, and use the arrow on a role to collapse or expand its branch. Drag on empty
+          space (or shift-click roles one at a time) to select several at once and act on
+          them as a group.
         </span>
-        <span className="flex-shrink-0 ml-3">
-          {nodes.length} position{nodes.length === 1 ? "" : "s"} · {edges.length} connection
-          {edges.length === 1 ? "" : "s"}
+        <span className="flex-shrink-0 ml-3 flex items-center gap-3">
+          <span>
+            {nodes.length} position{nodes.length === 1 ? "" : "s"} · {edges.length} connection
+            {edges.length === 1 ? "" : "s"}
+          </span>
+          <FontControls
+            fontFamily={fontSettings.fontFamily}
+            fontScale={fontSettings.fontScale}
+            onChange={handleFontChange}
+          />
         </span>
       </div>
 
@@ -670,7 +734,15 @@ export default function CareerTree({ chartId }) {
           onNodeClick={handleNodeClick}
           onNodeDoubleClick={handleNodeDoubleClick}
           onPaneClick={handlePaneClick}
+          onSelectionChange={handleSelectionChange}
           connectionMode="loose"
+          // Left-drag on empty canvas now draws a selection box instead
+          // of panning (panOnDrag is limited to middle/right mouse so
+          // panning is still possible that way, or via scroll/pinch).
+          // Shift-click toggles a role into/out of the selection.
+          selectionOnDrag
+          panOnDrag={[1, 2]}
+          multiSelectionKeyCode="Shift"
           nodesDraggable
           fitView
           fitViewOptions={{ padding: 0.2 }}
@@ -679,6 +751,13 @@ export default function CareerTree({ chartId }) {
         >
           <MiniMap />
           <NodeSearch nodes={nodes} onSelect={focusOnNode} />
+          <SelectionToolbar
+            count={selectedNodeIds.length}
+            onClose={() => handleBulkSetClosed(true)}
+            onOpen={() => handleBulkSetClosed(false)}
+            onDelete={handleBulkDelete}
+            onClear={handleClearSelection}
+          />
           <Controls>
             <ControlButton
               onClick={handleDownloadImageAsIs}

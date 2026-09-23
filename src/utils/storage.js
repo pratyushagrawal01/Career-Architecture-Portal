@@ -5,6 +5,7 @@
 // way to recover it.
 
 const ROLES_KEY = "career-architecture-roles-v1";
+const FONT_KEY = "career-architecture-font-v1";
 const CHARTS_INDEX_KEY = "career-architecture-charts-v1";
 const CHART_DATA_PREFIX = "career-architecture-chart-data-v1-";
 const ACTIVE_CHART_KEY = "career-architecture-active-chart-v1";
@@ -15,6 +16,39 @@ const LEGACY_CHART_KEY = "career-architecture-chart-v1";
 
 function generateChartId() {
   return `chart-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+export const defaultFontSettings = {
+  fontFamily: "Inter, sans-serif",
+  fontScale: 1,
+};
+
+export function loadFontSettings() {
+  try {
+    const raw = localStorage.getItem(FONT_KEY);
+    if (!raw) return defaultFontSettings;
+    const parsed = JSON.parse(raw);
+    return {
+      fontFamily:
+        typeof parsed.fontFamily === "string" && parsed.fontFamily
+          ? parsed.fontFamily
+          : defaultFontSettings.fontFamily,
+      fontScale:
+        typeof parsed.fontScale === "number" && parsed.fontScale > 0
+          ? parsed.fontScale
+          : defaultFontSettings.fontScale,
+    };
+  } catch {
+    return defaultFontSettings;
+  }
+}
+
+export function saveFontSettings(settings) {
+  try {
+    localStorage.setItem(FONT_KEY, JSON.stringify(settings));
+  } catch {
+    // best-effort
+  }
 }
 
 export function loadRoles(fallback) {
@@ -177,10 +211,11 @@ export function saveChart(id, nodesList, edgesList) {
   }
 }
 
-// --- Backup / restore (covers roles + every chart) ----------------------
+// --- Backup / restore (covers roles + every chart + font settings) ------
 
 export function exportBackup() {
   const roles = loadRoles([]);
+  const fontSettings = loadFontSettings();
   const index = loadChartsIndex();
   const charts = index.map((c) => {
     const data = loadChart(c.id) || { nodes: [], edges: [] };
@@ -191,6 +226,7 @@ export function exportBackup() {
     exportedAt: new Date().toISOString(),
     roles,
     charts,
+    fontSettings,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -209,6 +245,13 @@ export async function importBackup(file) {
   }
   const roles = Array.isArray(parsed.roles) ? parsed.roles : [];
   localStorage.setItem(ROLES_KEY, JSON.stringify(roles));
+
+  if (parsed.fontSettings && typeof parsed.fontSettings === "object") {
+    saveFontSettings({
+      fontFamily: parsed.fontSettings.fontFamily || defaultFontSettings.fontFamily,
+      fontScale: parsed.fontSettings.fontScale || defaultFontSettings.fontScale,
+    });
+  }
 
   if (Array.isArray(parsed.charts) && parsed.charts.length) {
     // Current (multi-chart) backup format.

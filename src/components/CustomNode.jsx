@@ -73,7 +73,10 @@ export default function CustomNode({ data, selected }) {
           boxShadow,
           background: "white",
           cursor: "pointer",
-          fontFamily: FONT_STACK,
+          // FontControls (in the chart's toolbar) sets --chart-font-family
+          // on the chart's wrapper element; every node inherits it from
+          // there. Falls back to the original stack if nothing's set yet.
+          fontFamily: "var(--chart-font-family, " + FONT_STACK + ")",
           // Container queries let the text below scale with however big
           // this particular box has been resized to, instead of a fixed
           // pixel size that looks cramped when enlarged or oversized
@@ -93,8 +96,11 @@ export default function CustomNode({ data, selected }) {
             fontWeight: 600,
             // Scales 1:1 with the box — grow the node 10% and this
             // grows exactly 10%, since it's a pure fraction of the
-            // container's height with no fixed part.
-            fontSize: "clamp(13px, 18cqh, 28px)",
+            // container's height with no fixed part. The outer
+            // "* var(--chart-font-scale, 1)" is the global text-size
+            // slider from FontControls — 1 by default, so unchanged
+            // until someone moves it.
+            fontSize: "calc(clamp(15px, 22cqh, 32px) * var(--chart-font-scale, 1))",
             padding: "clamp(10px, 10cqh, 22px) clamp(10px, 6cqw, 20px)",
             // This row now owns the extra space instead of the
             // level/experience row below it.
@@ -165,11 +171,12 @@ export default function CustomNode({ data, selected }) {
             justifyContent: "space-between",
             alignItems: "center",
             // Mostly a fixed size (the "6px" part) with only a small
-            // sliver of container-relative growth (the "5cqh" part).
-            // Because most of this value doesn't scale at all, a 10%
-            // increase in box height only moves this ~4-5%, so it
-            // grows noticeably slower than the role-name font above.
-            fontSize: "clamp(9px, calc(6px + 5cqh), 14px)",
+            // sliver of container-relative growth (the "5cqh" part),
+            // so resizing a single box moves this ~4-5% for every 10%
+            // the role-name font above moves. Also multiplied by the
+            // same global "--chart-font-scale" as the role name, so
+            // the global size slider moves both together.
+            fontSize: "calc(clamp(9px, calc(6px + 5cqh), 14px) * var(--chart-font-scale, 1))",
             color: "#334155",
             padding: "clamp(4px, 4cqh, 10px) clamp(8px, 6cqw, 16px)",
             background: "white",
